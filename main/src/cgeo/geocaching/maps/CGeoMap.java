@@ -33,6 +33,7 @@ import cgeo.geocaching.maps.interfaces.MapViewImpl;
 import cgeo.geocaching.maps.interfaces.OnMapDragListener;
 import cgeo.geocaching.settings.Settings;
 import cgeo.geocaching.ui.dialog.LiveMapInfoDialogBuilder;
+import cgeo.geocaching.store.CacheDownloader;
 import cgeo.geocaching.utils.AngleUtils;
 import cgeo.geocaching.utils.CancellableHandler;
 import cgeo.geocaching.utils.GeoDirHandler;
@@ -638,6 +639,15 @@ public class CGeoMap extends AbstractMap implements OnMapDragListener, ViewFacto
             case R.id.menu_store_caches:
                 if (!isLoading()) {
                     final Set<String> geocodesInViewport = getGeocodesForCachesInViewport();
+
+                    CacheDownloader cacheDownloader = new CacheDownloader(activity,
+                            viewport.getCenter().toString(), geocodesInViewport);
+
+                    ActivityMixin.showToast(activity, "Storing caches for offline use.");
+                    cacheDownloader.start();
+
+                    if (false) {
+
                     final List<String> geocodes = new ArrayList<String>();
 
                     for (final String geocode : geocodesInViewport) {
@@ -666,6 +676,8 @@ public class CGeoMap extends AbstractMap implements OnMapDragListener, ViewFacto
                                 }, true, StoredList.TEMPORARY_LIST_ID);
                     } else {
                         storeCaches(geocodes, StoredList.STANDARD_LIST_ID);
+                    }
+
                     }
                 }
                 return true;

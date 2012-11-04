@@ -383,5 +383,7 @@
             android:label="@string/app_name"
             android:windowSoftInputMode="stateHidden" >
         </activity>
+        <service android:name=".store.CacheDownloader$DownloaderService">
+        </service>
     </application>
 </manifest>
