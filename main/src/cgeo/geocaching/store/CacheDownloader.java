@@ -9,11 +9,17 @@ import android.app.Notification;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Process;
+import android.util.Log;
 
 import java.util.ArrayList;
 import java.util.Set;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 
 public class CacheDownloader {
+
+    private static final String LOG_TAG = "CacheDownloader";
 
     private Context context;
     //private DownloaderService downloader;
@@ -39,64 +45,100 @@ public class CacheDownloader {
     }
 
 
-    public static class DownloaderService extends IntentService {
-
+    public static class DownloaderService extends IntentService
+    {
         private NotificationManager nm;
         private long lastStoredTime = 0L;
         private int finishedNotificationCounter = 1;
 
-        public DownloaderService() {
+        private BlockingQueue<String> cacheQueue = new LinkedBlockingQueue<String>();
+
+        private Notification.Builder notificationBuilder = new Notification.Builder(this);
+        private DownloaderThread downloaderThread = new DownloaderThread();
+
+        public DownloaderService()
+        {
             super("DownloaderService");
         }
 
         @Override
-        public void onCreate() {
+        public void onCreate()
+        {
             super.onCreate();
 
             nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            notificationBuilder.setOngoing(true);
+            notificationBuilder.setSmallIcon(R.drawable.cgeo);
+            notificationBuilder.setContentTitle("Storing caches offline"); /* TODO: I18N */
         }
 
         @Override
-        protected void onHandleIntent(Intent intent) {
-            Notification.Builder notificationBuilder = new Notification.Builder(this);
-            notificationBuilder.setOngoing(true);
-            notificationBuilder.setContentTitle("Storing caches offline"); /* TODO: I18N */
-            notificationBuilder.setContentText("Starting..."); /* TODO: I18N */
-            notificationBuilder.setSmallIcon(R.drawable.cgeo);
-
-            nm.notify(0, notificationBuilder.getNotification());
-
-            ArrayList<String> caches = intent.getExtras().getStringArrayList("caches");
-
-            int num = 0;
-            for (String cache : caches)
+        protected void onHandleIntent(Intent intent)
+        {
+            if (!downloaderThread.isAlive())
             {
-                notificationBuilder.setContentText("Storing " + cache + " (" + ++num + "/" + caches.size() + ")");
+                notificationBuilder.setContentText("Starting..."); /* TODO: I18N */
                 nm.notify(0, notificationBuilder.getNotification());
-
-                if ((System.currentTimeMillis() - lastStoredTime) < 1500) {
-
-                    int delay = 1000 + (int) (Math.random() * 1000.0) - (int) (System.currentTimeMillis() - lastStoredTime);
-                    if (delay < 0) {
-                        delay = 500;
-                    }
-                    sleepInterruptable(delay);
-                }
-
-                cgCache.storeCache(null, cache, StoredList.STANDARD_LIST_ID, false, null);
-
-                lastStoredTime = System.currentTimeMillis();
             }
 
-            nm.cancel(0);
+            Log.i(LOG_TAG, "Adding caches queue.");
+            cacheQueue.addAll(intent.getExtras().getStringArrayList("caches"));
 
-            notificationBuilder.setOngoing(false);
-            notificationBuilder.setContentTitle("Finished storing caches");
-            notificationBuilder.setContentText("");
-
-            nm.notify(finishedNotificationCounter++, notificationBuilder.getNotification());
+            if (!downloaderThread.isAlive())
+            {
+                Log.i(LOG_TAG, "Starting downloader thread.");
+                downloaderThread.start();
+            }
         }
 
+        private class DownloaderThread extends Thread
+        {
+            public DownloaderThread()
+            {
+                super("C:Geo downloader");
+                Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
+            }
+
+            @Override
+            public void run() {
+                int num = 0;
+
+                String cache = cacheQueue.poll();
+                while (cache != null)
+                {
+                    num++;
+                    String statusText = "Storing " + cache + " (" + num + "/" + (num + cacheQueue.size()) + ")";
+                    Log.i(LOG_TAG, statusText);
+                    notificationBuilder.setContentText(statusText);
+                    nm.notify(0, notificationBuilder.getNotification());
+
+                    if ((System.currentTimeMillis() - lastStoredTime) < 1500) {
+
+                        int delay = 1000 + (int) (Math.random() * 1000.0) - (int) (System.currentTimeMillis() - lastStoredTime);
+                        if (delay < 0) {
+                            delay = 500;
+                        }
+                        sleepInterruptable(delay);
+                    }
+
+                    cgCache.storeCache(null, cache, StoredList.STANDARD_LIST_ID, false, null);
+
+                    lastStoredTime = System.currentTimeMillis();
+
+                    cacheQueue.poll();
+                }
+
+                Log.i(LOG_TAG, "Finished storing caches");
+
+                nm.cancel(0);
+
+                notificationBuilder.setOngoing(false);
+                notificationBuilder.setContentTitle("Finished storing caches");
+                notificationBuilder.setContentText("");
+
+                nm.notify(finishedNotificationCounter++, notificationBuilder.getNotification());
+            }
+        }
 
         private void sleepInterruptable(long time)
         {
